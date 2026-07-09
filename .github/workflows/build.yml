@@ -28,20 +28,22 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
 
-      - name: Find Visual Studio
-        shell: pwsh
+      - name: Show files
+        shell: cmd
         run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $devenv = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "Common7\IDE\devenv.com")[0]
-          if (!$devenv) { throw "devenv.com not found" }
-          "DEVENV=$devenv" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Host "Using devenv: $devenv"
+          dir
+          dir /s *.sln
+          dir /s *.vcproj
 
       - name: Upgrade old Visual Studio project
         shell: cmd
         run: |
-          call "%DEVENV%" nssm.sln /Upgrade
-          dir *.vcxproj
+          set DEVENV="%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\devenv.com"
+          if not exist %DEVENV% set DEVENV="%ProgramFiles%\Microsoft Visual Studio\2022\Professional\Common7\IDE\devenv.com"
+          if not exist %DEVENV% set DEVENV="%ProgramFiles%\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.com"
+          echo Using %DEVENV%
+          %DEVENV% nssm.sln /Upgrade
+          dir /s *.vcxproj
 
       - name: Force VS2022 toolset
         shell: pwsh
@@ -51,17 +53,25 @@ jobs:
           }
 
           $txt = Get-Content "nssm.vcxproj" -Raw
-          $txt = $txt -replace '<PlatformToolset>.*?</PlatformToolset>', '<PlatformToolset>v143</PlatformToolset>'
-          Set-Content "nssm.vcxproj" $txt -Encoding UTF8
 
-          Select-String -Path "nssm.vcxproj" -Pattern "PlatformToolset|WindowsTargetPlatformVersion"
+          if ($txt -match "<PlatformToolset>.*?</PlatformToolset>") {
+            $txt = $txt -replace "<PlatformToolset>.*?</PlatformToolset>", "<PlatformToolset>v143</PlatformToolset>"
+          } else {
+            $txt = $txt -replace "</PropertyGroup>", "<PlatformToolset>v143</PlatformToolset>`n</PropertyGroup>"
+          }
+
+          Set-Content "nssm.vcxproj" $txt -Encoding UTF8
+          Select-String -Path "nssm.vcxproj" -Pattern "PlatformToolset"
 
       - name: Build NSSM
         shell: cmd
         run: |
-          msbuild nssm.vcxproj /p:Configuration=Release /p:Platform="${{ matrix.platform }}" /p:PlatformToolset=v143 /m /v:minimal /bl:build-${{ matrix.name }}.binlog /fl /flp:logfile=build-${{ matrix.name }}.log;verbosity=diagnostic
+          echo Building ${{ matrix.name }} > build-${{ matrix.name }}.log
+          msbuild nssm.vcxproj /p:Configuration=Release /p:Platform="${{ matrix.platform }}" /p:PlatformToolset=v143 /m /v:normal >> build-${{ matrix.name }}.log 2>&1
+          type build-${{ matrix.name }}.log
 
       - name: Upload EXE
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: nssm-${{ matrix.name }}
@@ -72,6 +82,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log-${{ matrix.name }}
-          path: |
-            build-${{ matrix.name }}.log
-            build-${{ matrix.name }}.binlog
+          path: build-${{ matrix.name }}.log
