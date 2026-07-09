@@ -24,16 +24,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
-
-      - name: Show files
-        shell: cmd
-        run: |
-          dir
-          dir /s *.sln
-          dir /s *.vcproj
 
       - name: Upgrade old Visual Studio project
         shell: cmd
@@ -48,30 +42,38 @@ jobs:
       - name: Force VS2022 toolset
         shell: pwsh
         run: |
-          if (!(Test-Path "nssm.vcxproj")) {
-            throw "nssm.vcxproj was not created. Upgrade failed."
-          }
-
           $txt = Get-Content "nssm.vcxproj" -Raw
-
-          if ($txt -match "<PlatformToolset>.*?</PlatformToolset>") {
-            $txt = $txt -replace "<PlatformToolset>.*?</PlatformToolset>", "<PlatformToolset>v143</PlatformToolset>"
-          } else {
-            $txt = $txt -replace "</PropertyGroup>", "<PlatformToolset>v143</PlatformToolset>`n</PropertyGroup>"
-          }
-
+          $txt = $txt -replace "<PlatformToolset>.*?</PlatformToolset>", "<PlatformToolset>v143</PlatformToolset>"
           Set-Content "nssm.vcxproj" $txt -Encoding UTF8
-          Select-String -Path "nssm.vcxproj" -Pattern "PlatformToolset"
+
+      - name: Patch version.cmd
+        shell: cmd
+        run: |
+          > version.cmd echo @echo off
+          >> version.cmd echo echo #define NSSM_VERSION _T("2.24") ^> version.h
+          >> version.cmd echo echo #define NSSM_VERSIONINFO 2,24,0,0 ^>^> version.h
+          >> version.cmd echo echo #define NSSM_DATE _T("%DATE%") ^>^> version.h
+          >> version.cmd echo echo #define NSSM_FILEFLAGS 0L ^>^> version.h
+          >> version.cmd echo echo #define NSSM_COPYRIGHT _T("Public Domain; Author Iain Patterson 2003-2017") ^>^> version.h
+          type version.cmd
 
       - name: Build NSSM
         shell: cmd
         run: |
           echo Building ${{ matrix.name }} > build-${{ matrix.name }}.log
           msbuild nssm.vcxproj /p:Configuration=Release /p:Platform="${{ matrix.platform }}" /p:PlatformToolset=v143 /m /v:normal >> build-${{ matrix.name }}.log 2>&1
+          set BUILD_EXIT=%ERRORLEVEL%
           type build-${{ matrix.name }}.log
+          exit /b %BUILD_EXIT%
+
+      - name: Show output files
+        if: always()
+        shell: cmd
+        run: |
+          dir /s out
+          dir /s *.exe
 
       - name: Upload EXE
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: nssm-${{ matrix.name }}
