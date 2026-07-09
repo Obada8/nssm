@@ -40,7 +40,7 @@ if "%BUILD_ID%" == "" set year=
 
 @rem Create version.h.
 @echo>version.h.new #define NSSM_VERSION _T("%description%")
-@echo>>version.h.new #define NSSM_VERSIONINFO %major%,%minor%,%n%,%BUILD_NUMBER%
+@echo>>version.h.new #define NSSM_VERSIONINFO 2,24,0,0
 @echo>>version.h.new #define NSSM_DATE _T("%DATE%")
 @echo>>version.h.new #define NSSM_FILEFLAGS %flags%
 @echo>>version.h.new #define NSSM_COPYRIGHT _T("Public Domain; Author Iain Patterson 2003-%year%")
