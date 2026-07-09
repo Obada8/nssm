@@ -11,9 +11,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - win32
-          - win64
+        include:
+          - name: win32
+            platform: Win32
+            outdir: win32
+          - name: win64
+            platform: x64
+            outdir: win64
 
     steps:
       - name: Checkout source
@@ -24,15 +28,50 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
 
+      - name: Find Visual Studio
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $devenv = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "Common7\IDE\devenv.com")[0]
+          if (!$devenv) { throw "devenv.com not found" }
+          "DEVENV=$devenv" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Using devenv: $devenv"
+
+      - name: Upgrade old Visual Studio project
+        shell: cmd
+        run: |
+          call "%DEVENV%" nssm.sln /Upgrade
+          dir *.vcxproj
+
+      - name: Force VS2022 toolset
+        shell: pwsh
+        run: |
+          if (!(Test-Path "nssm.vcxproj")) {
+            throw "nssm.vcxproj was not created. Upgrade failed."
+          }
+
+          $txt = Get-Content "nssm.vcxproj" -Raw
+          $txt = $txt -replace '<PlatformToolset>.*?</PlatformToolset>', '<PlatformToolset>v143</PlatformToolset>'
+          Set-Content "nssm.vcxproj" $txt -Encoding UTF8
+
+          Select-String -Path "nssm.vcxproj" -Pattern "PlatformToolset|WindowsTargetPlatformVersion"
+
       - name: Build NSSM
         shell: cmd
         run: |
-          msbuild nssm.sln /p:Configuration=Release /p:Platform=${{ matrix.platform }} /m
+          msbuild nssm.vcxproj /p:Configuration=Release /p:Platform="${{ matrix.platform }}" /p:PlatformToolset=v143 /m /v:minimal /bl:build-${{ matrix.name }}.binlog /fl /flp:logfile=build-${{ matrix.name }}.log;verbosity=diagnostic
 
-      - name: Upload artifact
+      - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: nssm-${{ matrix.platform }}
+          name: nssm-${{ matrix.name }}
+          path: out/Release/${{ matrix.outdir }}/nssm.exe
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.name }}
           path: |
-            out/Release/win32/nssm.exe
-            out/Release/win64/nssm.exe
+            build-${{ matrix.name }}.log
+            build-${{ matrix.name }}.binlog
