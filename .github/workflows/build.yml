@@ -9,8 +9,11 @@ jobs:
     runs-on: windows-2022
 
     strategy:
+      fail-fast: false
       matrix:
-        platform: [Win32, x64]
+        platform:
+          - win32
+          - win64
 
     steps:
       - name: Checkout source
@@ -19,12 +22,14 @@ jobs:
           fetch-depth: 0
 
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
-      - name: Build
-        run: msbuild nssm.sln /p:Configuration=Release /p:Platform=${{ matrix.platform }}
+      - name: Build NSSM
+        shell: cmd
+        run: |
+          msbuild nssm.sln /p:Configuration=Release /p:Platform=${{ matrix.platform }} /m
 
-      - name: Upload EXE
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: nssm-${{ matrix.platform }}
